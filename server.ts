@@ -1,5 +1,19 @@
 import { Application } from "https://deno.land/x/oak/mod.ts";
 import { applyGraphQL, gql } from "https://deno.land/x/oak_graphql/mod.ts";
+import { MongoClient } from "https://deno.land/x/mongo@v0.8.0/mod.ts";
+
+const client = new MongoClient();
+client.connectWithUri("mongodb://localhost:27017");
+
+// Defining schema interface
+interface DogSchema {
+  _id: { $oid: string };
+  name: string;
+  isGoodBoy: boolean;
+}
+
+const db = client.database("dogs");
+const dogs = db.collection("dogs");
 
 const app = new Application();
 
@@ -17,14 +31,51 @@ app.use(async (ctx, next) => {
 });
 
 const types = (gql as any)`
+  type Dog {
+    name: String
+    isGoodBoy: Boolean
+    id: ID
+  } 
+
+  input DogInput {
+    name: String
+    isGoodBoy: Boolean
+  }
+
   type Query {
-    foo: String 
+    foo: String
+    dog: [Dog]
+  }
+
+  type Mutation {
+    addDog(input: DogInput): Dog
   }
 `;
 
 const resolvers = {
   Query: {
     foo: () => "bar",
+    dog: async () => {
+      const doggos = await dogs.find();
+      return doggos.map((doggo: any) => {
+        const {
+          _id: { $oid: id },
+        } = doggo;
+        doggo.id = id;
+        return doggo;
+      });
+    },
+  },
+  Mutation: {
+    addDog: async (
+      _: any,
+      { input: { name, isGoodBoy } }: any,
+      context: any,
+      info: any
+    ) => {
+      const { $oid: id } = await dogs.insertOne({ name, isGoodBoy });
+      return { name, isGoodBoy, id };
+    },
   },
 };
 
